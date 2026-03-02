@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
 
 import logging
+import uuid
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request
@@ -136,6 +137,45 @@ async def wechat_message(
     nonce: Optional[str] = Query(default=None),
 ) -> WeChatPluginResponse:
     return await _forward_message(request, signature, timestamp, nonce)
+
+
+@router.post("/openclaw/outbound", response_model=WeChatPluginResponse)
+async def openclaw_outbound_message(request: Request) -> WeChatPluginResponse:
+    try:
+        raw_payload = await request.json()
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid JSON body") from exc
+
+    try:
+        payload = ensure_json_object(raw_payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    text = str(payload.get("text") or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="Missing text field")
+
+    to = str(payload.get("to") or "").strip()
+    logger.info(
+        "OpenClaw outbound accepted: to=%s, text_length=%s",
+        to or "-",
+        len(text),
+    )
+
+    external_id = payload.get("external_id")
+    if external_id is None:
+        external_id = payload.get("externalId")
+    if external_id is None:
+        external_id = str(uuid.uuid4())
+
+    return WeChatPluginResponse(
+        code=0,
+        message="accepted",
+        data={
+            "external_id": str(external_id),
+            "to": to,
+        },
+    )
 
 
 @router.post("/plugin/register")

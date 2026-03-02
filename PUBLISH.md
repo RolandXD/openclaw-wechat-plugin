@@ -18,6 +18,7 @@ If first push needs auth, use GitHub PAT.
 
 ```bash
 pip install "git+https://github.com/RolandXD/openclaw-wechat-plugin.git@main"
+openclaw-wechat-plugin install-openclaw
 openclaw-wechat-plugin
 ```
 

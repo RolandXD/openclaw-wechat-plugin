@@ -1,0 +1,47 @@
+{
+  "id": "wechat",
+  "channels": ["wechat"],
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "adapterUrl": {
+        "type": "string"
+      },
+      "outboundPath": {
+        "type": "string"
+      },
+      "timeoutMs": {
+        "type": "integer",
+        "minimum": 1000
+      },
+      "backendBaseUrl": {
+        "type": "string"
+      },
+      "mode": {
+        "type": "string"
+      }
+    }
+  },
+  "uiHints": {
+    "adapterUrl": {
+      "label": "Adapter URL",
+      "help": "Base URL of openclaw-wechat-plugin service, e.g. http://127.0.0.1:8101."
+    },
+    "outboundPath": {
+      "label": "Outbound Path",
+      "help": "Relative path used for OpenClaw outbound calls."
+    },
+    "timeoutMs": {
+      "label": "Request Timeout (ms)"
+    },
+    "backendBaseUrl": {
+      "label": "Backend Base URL",
+      "advanced": true
+    },
+    "mode": {
+      "label": "Mode",
+      "advanced": true
+    }
+  }
+}

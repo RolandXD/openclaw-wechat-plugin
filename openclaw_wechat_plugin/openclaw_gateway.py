@@ -68,6 +68,23 @@ class OpenClawGatewayClient:
                     timeout=self.timeout,
                 )
 
+                schema_payload = await self._request(
+                    ws=ws,
+                    method="config.schema",
+                    params={},
+                    event_buffer=event_buffer,
+                    timeout=self.timeout,
+                )
+                if not self._schema_has_plugin_entry(
+                    schema_payload=schema_payload,
+                    plugin_entry_key=self.plugin_entry_key,
+                ):
+                    raise RuntimeError(
+                        "OpenClaw plugin `wechat` is not installed on this host. "
+                        "Run `openclaw-wechat-plugin install-openclaw` (or "
+                        "`openclaw plugins install <extension-path>`), then retry."
+                    )
+
                 config_snapshot = await self._request(
                     ws=ws,
                     method="config.get",
@@ -135,7 +152,7 @@ class OpenClawGatewayClient:
             "maxProtocol": self.PROTOCOL,
             "client": {
                 "id": OPENCLAW_CLIENT_ID,
-                "version": "wechat-plugin/0.1",
+                "version": "wechat-plugin/0.2",
                 "platform": "python",
                 "mode": OPENCLAW_CLIENT_MODE,
                 "instanceId": str(uuid.uuid4()),
@@ -288,6 +305,38 @@ class OpenClawGatewayClient:
         if isinstance(packet, dict):
             return packet
         return {}
+
+    @staticmethod
+    def _schema_has_plugin_entry(
+        *,
+        schema_payload: dict[str, Any],
+        plugin_entry_key: str,
+    ) -> bool:
+        schema = schema_payload.get("schema")
+        if not isinstance(schema, dict):
+            return False
+
+        properties = schema.get("properties")
+        if not isinstance(properties, dict):
+            return False
+
+        plugins = properties.get("plugins")
+        if not isinstance(plugins, dict):
+            return False
+
+        plugin_properties = plugins.get("properties")
+        if not isinstance(plugin_properties, dict):
+            return False
+
+        entries = plugin_properties.get("entries")
+        if not isinstance(entries, dict):
+            return False
+
+        entry_properties = entries.get("properties")
+        if not isinstance(entry_properties, dict):
+            return False
+
+        return plugin_entry_key in entry_properties
 
 
 openclaw_gateway_client = OpenClawGatewayClient()

@@ -35,7 +35,7 @@ def _to_bool(value: Optional[str], default: bool) -> bool:
 
 
 PLUGIN_NAME = os.getenv("PLUGIN_NAME", "wechat")
-PLUGIN_VERSION = os.getenv("PLUGIN_VERSION", "0.1.0")
+PLUGIN_VERSION = os.getenv("PLUGIN_VERSION", "0.2.0")
 PLUGIN_INSTANCE_ID = os.getenv(
     "PLUGIN_INSTANCE_ID",
     f"wechat-{socket.gethostname()}-{str(uuid.uuid4())[:8]}",

@@ -1,0 +1,19 @@
+{
+  "name": "openclaw-wechat-bridge",
+  "version": "0.2.0",
+  "description": "OpenClaw WeChat bridge channel plugin",
+  "type": "module",
+  "openclaw": {
+    "extensions": ["./index.ts"],
+    "channel": {
+      "id": "wechat",
+      "label": "WeChat",
+      "selectionLabel": "WeChat MiniApp",
+      "docsPath": "/channels/wechat",
+      "docsLabel": "wechat",
+      "blurb": "WeChat mini-program bridge channel via openclaw-wechat-plugin service.",
+      "aliases": ["weixin", "wx"],
+      "order": 52
+    }
+  }
+}

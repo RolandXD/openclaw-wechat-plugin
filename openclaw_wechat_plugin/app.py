@@ -103,6 +103,7 @@ def create_app() -> FastAPI:
             "health": "/health",
             "wechat_message": "/wechat/message",
             "wechat_callback": "/wechat/callback",
+            "openclaw_outbound": "/openclaw/outbound",
             "register_openclaw": "/openclaw/register",
             "register_backend": "/plugin/register",
             "heartbeat": "/plugin/heartbeat",

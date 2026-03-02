@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "openclaw-wechat-plugin"
-version = "0.1.0"
+version = "0.2.0"
 description = "Standalone WeChat adapter plugin for OpenClaw gateway"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -41,3 +41,10 @@ include-package-data = true
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["openclaw_wechat_plugin*"]
+
+[tool.setuptools.package-data]
+openclaw_wechat_plugin = [
+  "openclaw_extension/package.json",
+  "openclaw_extension/openclaw.plugin.json",
+  "openclaw_extension/index.ts",
+]

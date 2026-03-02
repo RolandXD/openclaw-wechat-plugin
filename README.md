@@ -1,96 +1,95 @@
-﻿# openclaw-wechat-plugin
+# openclaw-wechat-plugin
 
-Standalone WeChat adapter plugin for OpenClaw.
+Standalone WeChat bridge service + OpenClaw extension installer.
 
-This service is designed to be deployed independently and registered on the OpenClaw side, similar to channel plugin onboarding.
+This repo is split into two parts:
+- Python service (`openclaw-wechat-plugin`) for WeChat callback/message forwarding.
+- Bundled OpenClaw extension (`wechat`) that must be installed into OpenClaw to avoid `plugin not found: wechat`.
 
 ## What it does
 
 - Exposes WeChat endpoints:
-  - `GET /wechat/callback` (signature verify)
+  - `GET /wechat/callback`
   - `POST /wechat/callback`
   - `POST /wechat/message`
-- Forwards message payloads to backend middleware (`/wechat/message`)
-- Registers itself to OpenClaw gateway by writing `plugins.entries.wechat` via:
-  - `connect`
-  - `config.get`
-  - `config.apply` or `config.set`
-- Optionally registers itself to backend plugin registry (`/plugins/register`)
+- Forwards miniapp payloads to backend middleware (`/wechat/message`).
+- Exposes `POST /openclaw/outbound` as outbound adapter endpoint for OpenClaw channel delivery.
+- Can write `plugins.entries.wechat` via OpenClaw gateway API (`/openclaw/register`).
+- Provides CLI command to install bundled OpenClaw extension into any OpenClaw host.
 
 ## Repo layout
 
 ```text
 openclaw-wechat-plugin/
   openclaw_wechat_plugin/
-    __init__.py
     app.py
     cli.py
     config.py
-    models.py
-    wechat_crypto.py
-    backend_client.py
-    openclaw_gateway.py
     routes.py
+    openclaw_gateway.py
+    openclaw_installer.py
+    openclaw_extension/
+      package.json
+      openclaw.plugin.json
+      index.ts
   .env.example
   pyproject.toml
-  requirements.txt
   main.py
 ```
 
 ## Installation
 
-### Option A: pip from GitHub (recommended for deployment)
+### 1) Install Python package
 
 ```bash
 pip install "git+https://github.com/RolandXD/openclaw-wechat-plugin.git"
 ```
 
-Then run:
+### 2) Install bundled OpenClaw extension on OpenClaw host
+
+```bash
+openclaw-wechat-plugin install-openclaw
+```
+
+Useful options:
+- `--dry-run`: print commands only.
+- `--openclaw-bin <path>`: specify OpenClaw executable.
+- `--link`: install with `openclaw plugins install --link`.
+- `--no-enable`: skip `openclaw plugins enable wechat`.
+
+### 3) Start service
 
 ```bash
 openclaw-wechat-plugin
 ```
 
-### Option B: local dev
-
-```bash
-pip install -r requirements.txt
-python main.py
-```
-
 ## Configuration
 
-Copy `.env.example` to `.env`, then set at least:
-
+Copy `.env.example` to `.env`, then configure at least:
 - `WECHAT_TOKEN`
 - `BACKEND_BASE_URL` (e.g. `http://127.0.0.1:8001`)
 - `OPENCLAW_GATEWAY_WS_URL` (e.g. `ws://127.0.0.1:18789`)
 - `OPENCLAW_TOKEN`
 
-### Key OpenClaw registration vars
-
-- `OPENCLAW_AUTO_REGISTER=true`
-- `OPENCLAW_APPLY_AFTER_REGISTER=true`
-- `OPENCLAW_PLUGIN_ENTRY_KEY=wechat`
+`plugins.entries.wechat.config` suggested fields:
+- `adapterUrl`: plugin service base URL, e.g. `http://127.0.0.1:8101`
+- `outboundPath`: default `/openclaw/outbound`
+- `timeoutMs`: request timeout in ms
 
 ## APIs
 
 - `GET /health`
-- `POST /openclaw/register` (manual OpenClaw registration)
-- `POST /plugin/register` (manual backend registry)
+- `POST /wechat/message`
+- `POST /openclaw/outbound`
+- `POST /openclaw/register`
+- `POST /plugin/register`
 - `POST /plugin/heartbeat`
 
 ## Typical flow
 
 ```text
-Miniapp -> openclaw-wechat-plugin -> backend middleware -> OpenClaw gateway/model
+Miniapp -> openclaw-wechat-plugin -> backend middleware -> OpenClaw/model
 ```
-
-## Suggested production setup
-
-- Keep this plugin as independent process/service.
-- Register plugin into OpenClaw at startup (`OPENCLAW_AUTO_REGISTER=true`).
-- Use backend registry as observability/ops metadata, not as source of truth.
 
 ## License
 
