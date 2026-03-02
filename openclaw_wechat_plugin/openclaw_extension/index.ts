@@ -104,8 +104,111 @@ function buildOutboundUrl(cfg: WechatEntryConfig): string {
   return `${cfg.adapterUrl}${cfg.outboundPath}`;
 }
 
+function buildHealthUrl(cfg: WechatEntryConfig): string {
+  return `${cfg.adapterUrl}/health`;
+}
+
+function resolvePortFromAdapterUrl(adapterUrl: string): number | null {
+  try {
+    const parsed = new URL(adapterUrl);
+    if (!parsed.port) {
+      return parsed.protocol === "https:" ? 443 : 80;
+    }
+    const asNumber = Number(parsed.port);
+    return Number.isFinite(asNumber) ? asNumber : null;
+  } catch {
+    return null;
+  }
+}
+
+async function probeAdapterHealth(
+  cfg: unknown,
+  timeoutMs?: number,
+): Promise<Record<string, unknown>> {
+  const entryConfig = parseEntryConfig(readPluginEntryConfig(cfg));
+  const controller = new AbortController();
+  const timeout = Math.max(1000, Math.min(timeoutMs ?? entryConfig.timeoutMs, 10000));
+  const timer = setTimeout(() => controller.abort(), timeout);
+
+  try {
+    const response = await fetch(buildHealthUrl(entryConfig), {
+      method: "GET",
+      signal: controller.signal,
+    });
+
+    const bodyText = await response.text();
+    let body: Record<string, unknown> = {};
+    if (bodyText.trim()) {
+      try {
+        const parsed = JSON.parse(bodyText);
+        if (isRecord(parsed)) {
+          body = parsed;
+        } else {
+          body = { raw: bodyText };
+        }
+      } catch {
+        body = { raw: bodyText };
+      }
+    }
+
+    if (!response.ok) {
+      return {
+        ok: false,
+        status: response.status,
+        detail: toNonEmptyString(body.detail) ?? bodyText.slice(0, 240),
+      };
+    }
+
+    return {
+      ok: true,
+      status: response.status,
+      ...body,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      error: String(error),
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function resolveOutboundTarget(explicitTo: unknown, fallbackTo: unknown): string {
   return toNonEmptyString(explicitTo) ?? toNonEmptyString(fallbackTo) ?? DEFAULT_TO;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function delayWithAbort(
+  ms: number,
+  signal: AbortSignal,
+): Promise<"aborted" | "timeout"> {
+  return new Promise((resolve) => {
+    if (signal.aborted) {
+      resolve("aborted");
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      cleanup();
+      resolve("timeout");
+    }, Math.max(0, ms));
+
+    const onAbort = () => {
+      cleanup();
+      resolve("aborted");
+    };
+
+    const cleanup = () => {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", onAbort);
+    };
+
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
 }
 
 function listAccountIds(cfg: unknown): string[] {
@@ -285,6 +388,79 @@ const wechatChannelPlugin = {
       hint: "<openid>",
     },
   },
+  status: {
+    defaultRuntime: {
+      accountId: DEFAULT_ACCOUNT_ID,
+      enabled: true,
+      configured: true,
+      running: false,
+      connected: false,
+      lastError: null,
+      mode: "external-forward",
+    },
+    buildChannelSummary: ({ snapshot, cfg, defaultAccountId }: Record<string, unknown>) => {
+      const entryConfig = parseEntryConfig(readPluginEntryConfig(cfg));
+      const snap = isRecord(snapshot) ? snapshot : {};
+      return {
+        configured: snap.configured !== false,
+        enabled: snap.enabled !== false,
+        running: snap.running === true,
+        connected: snap.connected === true,
+        defaultAccountId: toNonEmptyString(defaultAccountId) ?? DEFAULT_ACCOUNT_ID,
+        adapterUrl: entryConfig.adapterUrl,
+        port: resolvePortFromAdapterUrl(entryConfig.adapterUrl),
+        mode: entryConfig.mode ?? "external-forward",
+        lastError: toNonEmptyString(snap.lastError) ?? null,
+      };
+    },
+    probeAccount: async ({ cfg, timeoutMs }: Record<string, unknown>) =>
+      probeAdapterHealth(cfg, typeof timeoutMs === "number" ? timeoutMs : undefined),
+    buildAccountSnapshot: ({ account, cfg, runtime, probe }: Record<string, unknown>) => {
+      const fallbackAccount = resolveAccount(cfg);
+      const resolvedAccount = isRecord(account)
+        ? {
+            accountId: toNonEmptyString(account.accountId) ?? fallbackAccount.accountId,
+            enabled: account.enabled !== false,
+            configured: account.configured !== false,
+            defaultTo: toNonEmptyString(account.defaultTo) ?? fallbackAccount.defaultTo,
+          }
+        : fallbackAccount;
+
+      const entryConfig = parseEntryConfig(readPluginEntryConfig(cfg));
+      const runtimeState = isRecord(runtime) ? runtime : {};
+      const probeState = isRecord(probe) ? probe : undefined;
+
+      const probeOk = probeState ? probeState.ok : undefined;
+      const connected = typeof probeOk === "boolean" ? probeOk : runtimeState.connected === true;
+      const probeDetail =
+        toNonEmptyString(probeState ? probeState.detail : undefined) ??
+        toNonEmptyString(probeState ? probeState.error : undefined) ??
+        toNonEmptyString(probeState ? probeState.raw : undefined);
+
+      return {
+        ...runtimeState,
+        accountId: resolvedAccount.accountId,
+        enabled: resolvedAccount.enabled,
+        configured: resolvedAccount.configured,
+        running: runtimeState.running === true,
+        connected,
+        mode: entryConfig.mode ?? "external-forward",
+        baseUrl: entryConfig.adapterUrl,
+        port: resolvePortFromAdapterUrl(entryConfig.adapterUrl),
+        probe: probeState ?? runtimeState.probe,
+        lastProbeAt:
+          probeState !== undefined
+            ? Date.now()
+            : typeof runtimeState.lastProbeAt === "number"
+              ? runtimeState.lastProbeAt
+              : null,
+        lastError:
+          connected === true
+            ? null
+            : probeDetail ?? toNonEmptyString(runtimeState.lastError) ?? null,
+      };
+    },
+  },
   outbound: {
     deliveryMode: "direct",
     resolveTarget: ({ cfg, to, accountId }: Record<string, unknown>) => {
@@ -331,6 +507,92 @@ const wechatChannelPlugin = {
         externalId,
         data: response,
       };
+    },
+  },
+  gateway: {
+    startAccount: async ({
+      cfg,
+      accountId,
+      account,
+      abortSignal,
+      log,
+      getStatus,
+      setStatus,
+    }: Record<string, unknown>) => {
+      const resolvedAccount = isRecord(account)
+        ? {
+            accountId: toNonEmptyString(account.accountId) ?? DEFAULT_ACCOUNT_ID,
+            enabled: account.enabled !== false,
+            configured: account.configured !== false,
+          }
+        : resolveAccount(cfg, accountId);
+
+      const entryConfig = parseEntryConfig(readPluginEntryConfig(cfg));
+      const pollMs = 5000;
+      const abort = abortSignal instanceof AbortSignal ? abortSignal : new AbortController().signal;
+      const logger = isRecord(log) ? log : {};
+      const info = logger.info;
+      const warn = logger.warn;
+      const getStatusFn = typeof getStatus === "function" ? getStatus : () => ({});
+      const setStatusFn = typeof setStatus === "function" ? setStatus : () => {};
+
+      if (typeof info === "function") {
+        info(
+          `[${resolvedAccount.accountId}] wechat monitor started: ${entryConfig.adapterUrl}`,
+        );
+      }
+
+      while (!abort.aborted) {
+        const probe = await probeAdapterHealth(cfg, entryConfig.timeoutMs);
+        const connected = probe.ok === true;
+        const lastError = connected
+          ? null
+          : toNonEmptyString(probe.detail) ??
+            toNonEmptyString(probe.error) ??
+            "wechat adapter health check failed";
+
+        const current = isRecord(getStatusFn()) ? (getStatusFn() as Record<string, unknown>) : {};
+        setStatusFn({
+          ...current,
+          accountId: resolvedAccount.accountId,
+          enabled: resolvedAccount.enabled,
+          configured: resolvedAccount.configured,
+          running: true,
+          connected,
+          probe,
+          lastProbeAt: Date.now(),
+          lastError,
+          mode: entryConfig.mode ?? "external-forward",
+          baseUrl: entryConfig.adapterUrl,
+          port: resolvePortFromAdapterUrl(entryConfig.adapterUrl),
+        });
+
+        if (!connected && typeof warn === "function") {
+          warn(
+            `[${resolvedAccount.accountId}] wechat adapter unavailable: ${lastError ?? "unknown error"}`,
+          );
+        }
+
+        const waitResult = await delayWithAbort(pollMs, abort);
+        if (waitResult === "aborted") {
+          break;
+        }
+      }
+
+      const finalState = isRecord(getStatusFn()) ? (getStatusFn() as Record<string, unknown>) : {};
+      setStatusFn({
+        ...finalState,
+        accountId: resolvedAccount.accountId,
+        enabled: resolvedAccount.enabled,
+        configured: resolvedAccount.configured,
+        running: false,
+        connected: false,
+        lastStopAt: Date.now(),
+      });
+
+      if (typeof info === "function") {
+        info(`[${resolvedAccount.accountId}] wechat monitor stopped`);
+      }
     },
   },
 };

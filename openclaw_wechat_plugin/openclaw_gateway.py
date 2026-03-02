@@ -152,7 +152,7 @@ class OpenClawGatewayClient:
             "maxProtocol": self.PROTOCOL,
             "client": {
                 "id": OPENCLAW_CLIENT_ID,
-                "version": "wechat-plugin/0.2.2",
+                "version": "wechat-plugin/0.2.3",
                 "platform": "python",
                 "mode": OPENCLAW_CLIENT_MODE,
                 "instanceId": str(uuid.uuid4()),
@@ -200,6 +200,8 @@ class OpenClawGatewayClient:
 
         desired = {
             "adapterUrl": plugin_base_url,
+            "outboundPath": "/openclaw/outbound",
+            "timeoutMs": 15000,
             "backendBaseUrl": BACKEND_BASE_URL,
             "mode": "external-forward",
         }
@@ -207,6 +209,42 @@ class OpenClawGatewayClient:
             if entry_config.get(key) != value:
                 entry_config[key] = value
                 changed = True
+
+        channels = config_obj.get("channels")
+        if not isinstance(channels, dict):
+            channels = {}
+            config_obj["channels"] = channels
+            changed = True
+
+        wechat_channel = channels.get(self.plugin_entry_key)
+        if not isinstance(wechat_channel, dict):
+            wechat_channel = {}
+            channels[self.plugin_entry_key] = wechat_channel
+            changed = True
+
+        if wechat_channel.get("enabled") is not True:
+            wechat_channel["enabled"] = True
+            changed = True
+
+        accounts = wechat_channel.get("accounts")
+        if not isinstance(accounts, dict):
+            accounts = {}
+            wechat_channel["accounts"] = accounts
+            changed = True
+
+        default_account = accounts.get("default")
+        if not isinstance(default_account, dict):
+            default_account = {}
+            accounts["default"] = default_account
+            changed = True
+
+        if default_account.get("enabled") is not True:
+            default_account["enabled"] = True
+            changed = True
+
+        if default_account.get("defaultTo") != "wechat-user":
+            default_account["defaultTo"] = "wechat-user"
+            changed = True
 
         return changed, entry_config
 
