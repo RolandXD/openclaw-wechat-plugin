@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import asyncio
 import json
@@ -152,7 +152,7 @@ class OpenClawGatewayClient:
             "maxProtocol": self.PROTOCOL,
             "client": {
                 "id": OPENCLAW_CLIENT_ID,
-                "version": "wechat-plugin/0.2",
+                "version": "wechat-plugin/0.2.2",
                 "platform": "python",
                 "mode": OPENCLAW_CLIENT_MODE,
                 "instanceId": str(uuid.uuid4()),

@@ -1,3 +1,7 @@
+const CHANNEL_ID = "wechat";
+const DEFAULT_ACCOUNT_ID = "default";
+const DEFAULT_TO = "wechat-user";
+
 const DEFAULT_ADAPTER_URL = "http://127.0.0.1:8101";
 const DEFAULT_OUTBOUND_PATH = "/openclaw/outbound";
 const DEFAULT_TIMEOUT_MS = 15000;
@@ -32,7 +36,7 @@ function normalizePath(value: string): string {
   return value.startsWith("/") ? value : `/${value}`;
 }
 
-type WechatPluginConfig = {
+type WechatEntryConfig = {
   adapterUrl: string;
   outboundPath: string;
   timeoutMs: number;
@@ -40,7 +44,14 @@ type WechatPluginConfig = {
   mode?: string;
 };
 
-function parsePluginConfig(value: unknown): WechatPluginConfig {
+type WechatAccount = {
+  accountId: string;
+  enabled: boolean;
+  configured: boolean;
+  defaultTo: string;
+};
+
+function parseEntryConfig(value: unknown): WechatEntryConfig {
   const raw = isRecord(value) ? value : {};
   return {
     adapterUrl: normalizeBaseUrl(toNonEmptyString(raw.adapterUrl) ?? DEFAULT_ADAPTER_URL),
@@ -63,20 +74,84 @@ function readPluginEntryConfig(cfg: unknown): Record<string, unknown> {
   if (!isRecord(entries)) {
     return {};
   }
-  const wechatEntry = entries.wechat;
-  if (!isRecord(wechatEntry)) {
+  const channelEntry = entries[CHANNEL_ID];
+  if (!isRecord(channelEntry)) {
     return {};
   }
-  const entryConfig = wechatEntry.config;
+  const entryConfig = channelEntry.config;
   return isRecord(entryConfig) ? entryConfig : {};
 }
 
-function buildOutboundUrl(cfg: WechatPluginConfig): string {
+function readChannelConfig(cfg: unknown): Record<string, unknown> {
+  if (!isRecord(cfg)) {
+    return {};
+  }
+  const channels = cfg.channels;
+  if (!isRecord(channels)) {
+    return {};
+  }
+  const channelCfg = channels[CHANNEL_ID];
+  return isRecord(channelCfg) ? channelCfg : {};
+}
+
+function readChannelAccounts(cfg: unknown): Record<string, unknown> {
+  const channelCfg = readChannelConfig(cfg);
+  const accounts = channelCfg.accounts;
+  return isRecord(accounts) ? accounts : {};
+}
+
+function buildOutboundUrl(cfg: WechatEntryConfig): string {
   return `${cfg.adapterUrl}${cfg.outboundPath}`;
 }
 
-function resolveTarget(to: unknown, accountId: unknown): string {
-  return toNonEmptyString(to) ?? toNonEmptyString(accountId) ?? "unknown";
+function resolveOutboundTarget(explicitTo: unknown, fallbackTo: unknown): string {
+  return toNonEmptyString(explicitTo) ?? toNonEmptyString(fallbackTo) ?? DEFAULT_TO;
+}
+
+function listAccountIds(cfg: unknown): string[] {
+  const ids = Object.keys(readChannelAccounts(cfg));
+  if (!ids.includes(DEFAULT_ACCOUNT_ID)) {
+    ids.unshift(DEFAULT_ACCOUNT_ID);
+  }
+  return ids;
+}
+
+function resolveAccount(cfg: unknown, accountId?: unknown): WechatAccount {
+  const resolvedAccountId = toNonEmptyString(accountId) ?? DEFAULT_ACCOUNT_ID;
+  const accountRaw = readChannelAccounts(cfg)[resolvedAccountId];
+  const account = isRecord(accountRaw) ? accountRaw : {};
+  return {
+    accountId: resolvedAccountId,
+    enabled: account.enabled !== false,
+    configured: true,
+    defaultTo: toNonEmptyString(account.defaultTo) ?? DEFAULT_TO,
+  };
+}
+
+function setAccountEnabled(cfg: unknown, accountId: unknown, enabled: boolean): Record<string, unknown> {
+  const safeCfg = isRecord(cfg) ? cfg : {};
+  const channels = isRecord(safeCfg.channels) ? safeCfg.channels : {};
+  const channelCfg = isRecord(channels[CHANNEL_ID]) ? channels[CHANNEL_ID] : {};
+  const accounts = isRecord(channelCfg.accounts) ? channelCfg.accounts : {};
+  const key = toNonEmptyString(accountId) ?? DEFAULT_ACCOUNT_ID;
+  const account = isRecord(accounts[key]) ? accounts[key] : {};
+
+  return {
+    ...safeCfg,
+    channels: {
+      ...channels,
+      [CHANNEL_ID]: {
+        ...channelCfg,
+        accounts: {
+          ...accounts,
+          [key]: {
+            ...account,
+            enabled,
+          },
+        },
+      },
+    },
+  };
 }
 
 async function postOutbound(
@@ -119,8 +194,8 @@ async function postOutbound(
 }
 
 const pluginConfigSchema = {
-  parse(value: unknown): WechatPluginConfig {
-    return parsePluginConfig(value);
+  parse(value: unknown): WechatEntryConfig {
+    return parseEntryConfig(value);
   },
   uiHints: {
     adapterUrl: {
@@ -136,10 +211,36 @@ const pluginConfigSchema = {
   },
 };
 
+const channelConfigSchema = {
+  schema: {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      accounts: {
+        type: "object",
+        additionalProperties: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            enabled: { type: "boolean" },
+            defaultTo: { type: "string" },
+          },
+        },
+      },
+    },
+  },
+  uiHints: {
+    defaultTo: {
+      label: "Default To",
+      help: "Default recipient when no explicit target is provided.",
+    },
+  },
+};
+
 const wechatChannelPlugin = {
-  id: "wechat",
+  id: CHANNEL_ID,
   meta: {
-    id: "wechat",
+    id: CHANNEL_ID,
     label: "WeChat",
     selectionLabel: "WeChat MiniApp",
     docsPath: "/channels/wechat",
@@ -148,20 +249,65 @@ const wechatChannelPlugin = {
     aliases: ["wx", "weixin"],
     order: 52,
   },
+  capabilities: {
+    chatTypes: ["direct"],
+    polls: false,
+    threads: false,
+    media: false,
+    reactions: false,
+    edit: false,
+    reply: true,
+    nativeCommands: false,
+  },
+  reload: {
+    configPrefixes: ["channels.wechat", "plugins.entries.wechat.config"],
+  },
+  configSchema: channelConfigSchema,
+  config: {
+    listAccountIds: (cfg: unknown) => listAccountIds(cfg),
+    resolveAccount: (cfg: unknown, accountId?: unknown) => resolveAccount(cfg, accountId),
+    defaultAccountId: () => DEFAULT_ACCOUNT_ID,
+    setAccountEnabled: (args: Record<string, unknown>) =>
+      setAccountEnabled(args.cfg, args.accountId, Boolean(args.enabled)),
+    isConfigured: (_account: WechatAccount) => true,
+    describeAccount: (account: WechatAccount) => ({
+      accountId: account.accountId,
+      enabled: account.enabled,
+      configured: account.configured,
+      defaultTo: account.defaultTo,
+    }),
+    resolveDefaultTo: ({ cfg, accountId }: Record<string, unknown>) =>
+      resolveAccount(cfg, accountId).defaultTo,
+  },
+  messaging: {
+    targetResolver: {
+      looksLikeId: (raw: unknown) => Boolean(toNonEmptyString(raw)),
+      hint: "<openid>",
+    },
+  },
   outbound: {
     deliveryMode: "direct",
+    resolveTarget: ({ cfg, to, accountId }: Record<string, unknown>) => {
+      const account = resolveAccount(cfg, accountId);
+      return {
+        ok: true,
+        to: resolveOutboundTarget(to, account.defaultTo),
+      };
+    },
     sendText: async ({ cfg, to, text, accountId }: Record<string, unknown>) => {
-      const entryConfig = parsePluginConfig(readPluginEntryConfig(cfg));
+      const entryConfig = parseEntryConfig(readPluginEntryConfig(cfg));
+      const account = resolveAccount(cfg, accountId);
+      const target = resolveOutboundTarget(to, account.defaultTo);
       const message = typeof text === "string" ? text : String(text ?? "");
       if (!message.trim()) {
         throw new Error("[wechat] outbound text is empty");
       }
 
       const payload: Record<string, unknown> = {
-        channel: "wechat",
-        to: resolveTarget(to, accountId),
+        channel: CHANNEL_ID,
+        to: target,
         text: message,
-        accountId: toNonEmptyString(accountId) ?? null,
+        accountId: account.accountId,
       };
 
       const url = buildOutboundUrl(entryConfig);
@@ -181,7 +327,7 @@ const wechatChannelPlugin = {
 
       return {
         ok: true,
-        channel: "wechat",
+        channel: CHANNEL_ID,
         externalId,
         data: response,
       };
@@ -190,7 +336,7 @@ const wechatChannelPlugin = {
 };
 
 const wechatPlugin = {
-  id: "wechat",
+  id: CHANNEL_ID,
   name: "WeChat",
   description: "WeChat bridge plugin backed by openclaw-wechat-plugin service",
   configSchema: pluginConfigSchema,
