@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import os
 import socket
@@ -35,7 +35,7 @@ def _to_bool(value: Optional[str], default: bool) -> bool:
 
 
 PLUGIN_NAME = os.getenv("PLUGIN_NAME", "wechat")
-PLUGIN_VERSION = os.getenv("PLUGIN_VERSION", "0.2.3")
+PLUGIN_VERSION = os.getenv("PLUGIN_VERSION", "0.3.0")
 PLUGIN_INSTANCE_ID = os.getenv(
     "PLUGIN_INSTANCE_ID",
     f"wechat-{socket.gethostname()}-{str(uuid.uuid4())[:8]}",
@@ -74,3 +74,19 @@ OPENCLAW_APPLY_AFTER_REGISTER = _to_bool(
     True,
 )
 OPENCLAW_PLUGIN_ENTRY_KEY = os.getenv("OPENCLAW_PLUGIN_ENTRY_KEY", "wechat")
+
+# Cloud tunnel connector (edge -> cloud, outbound only)
+CLOUD_TUNNEL_WS_URL = os.getenv("CLOUD_TUNNEL_WS_URL", "").strip()
+CONNECTOR_NODE_ID = os.getenv("CONNECTOR_NODE_ID", PLUGIN_INSTANCE_ID).strip()
+CONNECTOR_OWNER_USER_ID = os.getenv("CONNECTOR_OWNER_USER_ID", "").strip()
+CONNECTOR_NODE_TOKEN = os.getenv("CONNECTOR_NODE_TOKEN", "").strip()
+CONNECTOR_RECONNECT_SECONDS = float(os.getenv("CONNECTOR_RECONNECT_SECONDS", "3"))
+CONNECTOR_HEARTBEAT_SECONDS = float(os.getenv("CONNECTOR_HEARTBEAT_SECONDS", "20"))
+CONNECTOR_LOG_PREFIX = os.getenv("CONNECTOR_LOG_PREFIX", "wechat-connector")
+
+LOCAL_OPENCLAW_GATEWAY_WS_URL = os.getenv(
+    "LOCAL_OPENCLAW_GATEWAY_WS_URL",
+    "ws://127.0.0.1:18789",
+).strip()
+LOCAL_OPENCLAW_TOKEN = os.getenv("LOCAL_OPENCLAW_TOKEN", OPENCLAW_TOKEN).strip()
+LOCAL_OPENCLAW_TIMEOUT = float(os.getenv("LOCAL_OPENCLAW_TIMEOUT", "60"))

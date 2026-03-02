@@ -4,6 +4,7 @@ import argparse
 import sys
 
 from .app import run
+from .connector import run_connector
 from .openclaw_installer import format_install_result, install_openclaw_extension
 
 
@@ -15,6 +16,10 @@ def _build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command")
 
     subparsers.add_parser("serve", help="Start the WeChat plugin service")
+    subparsers.add_parser(
+        "connector",
+        help="Run outbound cloud connector (edge OpenClaw -> cloud WS)",
+    )
 
     install_parser = subparsers.add_parser(
         "install-openclaw",
@@ -50,6 +55,10 @@ def main() -> None:
 
     if args.command in (None, "serve"):
         run()
+        return
+
+    if args.command == "connector":
+        run_connector()
         return
 
     if args.command == "install-openclaw":

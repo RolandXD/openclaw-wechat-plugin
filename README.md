@@ -16,6 +16,8 @@ This repo is split into two parts:
 - Exposes `POST /openclaw/outbound` as outbound adapter endpoint for OpenClaw channel delivery.
 - Can write `plugins.entries.wechat` via OpenClaw gateway API (`/openclaw/register`).
 - Provides CLI command to install bundled OpenClaw extension into any OpenClaw host.
+- Provides an outbound cloud connector (`openclaw-wechat-plugin connector`) so edge OpenClaw
+  hosts can actively connect to a public server without inbound NAT exposure.
 
 ## Repo layout
 
@@ -63,6 +65,12 @@ Useful options:
 openclaw-wechat-plugin
 ```
 
+### 4) Start outbound connector (recommended for private LAN/WSL hosts)
+
+```bash
+openclaw-wechat-plugin connector
+```
+
 ## Configuration
 
 Copy `.env.example` to `.env`, then configure at least:
@@ -70,6 +78,9 @@ Copy `.env.example` to `.env`, then configure at least:
 - `BACKEND_BASE_URL` (e.g. `http://127.0.0.1:8001`)
 - `OPENCLAW_GATEWAY_WS_URL` (e.g. `ws://127.0.0.1:18789`)
 - `OPENCLAW_TOKEN`
+- `CLOUD_TUNNEL_WS_URL` (e.g. `wss://your-public-server/ws/node`)
+- `CONNECTOR_NODE_ID`
+- `CONNECTOR_NODE_TOKEN`
 
 `plugins.entries.wechat.config` suggested fields:
 - `adapterUrl`: plugin service base URL, e.g. `http://127.0.0.1:8101`
@@ -89,6 +100,14 @@ Copy `.env.example` to `.env`, then configure at least:
 
 ```text
 Miniapp -> openclaw-wechat-plugin -> backend middleware -> OpenClaw/model
+```
+
+Cloud tunnel flow (single public server):
+
+```text
+Miniapp -> Public backend (HTTPS)
+Edge OpenClaw host -> Public backend /ws/node (outbound WS)
+Public backend -> existing WS tunnel -> edge connector -> local OpenClaw
 ```
 
 ## License
